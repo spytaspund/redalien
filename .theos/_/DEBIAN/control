@@ -1,0 +1,10 @@
+Package: com.spytaspund.redalien
+Name: RedAlien
+Depends: mobilesubstrate, preferenceloader, firmware (>= 3.0), com.fizk.ffmpeg, com.skyglow.tlsfix
+Description: Various fixes for AlienBlue and other Reddit clients.
+Maintainer: spytaspund
+Author: spytaspund
+Section: Tweaks
+Architecture: iphoneos-arm
+Version: 0.0.1-1-10+debug
+Installed-Size: 804

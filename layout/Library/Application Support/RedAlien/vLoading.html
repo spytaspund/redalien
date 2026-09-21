@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        * {
+            -webkit-box-sizing: border-box;
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #111;
+            color: #ccc;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-box-pack: center;
+            -webkit-box-align: center;
+        }
+        .container {
+            width: 80%;
+            max-width: 280px;
+            text-align: center;
+        }
+        .progress-track {
+            width: 100%;
+            height: 12px;
+            background: #1a1a1a;
+            border-radius: 6px;
+            border: 1px solid #282828;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 10px;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            border-radius: 5px;
+            background-color: #ff4500;
+            background-image: -webkit-linear-gradient(
+                135deg,
+                rgba(255, 255, 255, 0.25) 25%,
+                transparent 25%,
+                transparent 50%,
+                rgba(255, 255, 255, 0.25) 50%,
+                rgba(255, 255, 255, 0.25) 75%,
+                transparent 75%,
+                transparent
+            );
+            background-size: 30px 30px;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            -webkit-transition: width 0.2s ease-out;
+            -webkit-animation: move-stripes 0.8s linear infinite;
+        }
+
+        @-webkit-keyframes move-stripes {
+            0% {
+                background-position: 0 0;
+            }
+            100% {
+                background-position: 30px 0;
+            }
+        }
+
+        .status-text {
+            font-size: 12px;
+            color: #888;
+            font-weight: bold;
+            letter-spacing: 0.2px;
+            text-shadow: 0 1px 2px #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="progress-track">
+            <div id="bar" class="progress-bar"></div>
+        </div>
+        <div id="status" class="status-text">Loading...</div>
+    </div>
+
+    <script>
+        document.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+        }, false);
+
+        var statusURL = "{{STATUS_URL}}";
+        var statusElem = document.getElementById('status');
+        var barElem = document.getElementById('bar');
+
+        function applyData(data) {
+            if (!data) return;
+            if (data.ready) {
+                window.location.reload();
+                return;
+            }
+            if (data.error) {
+                statusElem.innerText = data.status || 'Error';
+                statusElem.style.color = '#e74c3c';
+                barElem.style.webkitAnimation = 'none';
+                return;
+            }
+            
+            var pct = Math.min(100, Math.max(0, data.progress || 0));
+            statusElem.innerText = data.status || 'Loading...';
+            barElem.style.width = pct + '%';
+        }
+
+        function pollStatus() {
+            var oldScript = document.getElementById('status-script');
+            if (oldScript && oldScript.parentNode) {
+                oldScript.parentNode.removeChild(oldScript);
+            }
+
+            window.statusData = null;
+            var script = document.createElement('script');
+            script.id = 'status-script';
+            script.src = statusURL + (statusURL.indexOf('?') >= 0 ? '&' : '?') + 't=' + new Date().getTime();
+            
+            script.onload = function() {
+                if (window.statusData) {
+                    applyData(window.statusData);
+                }
+            };
+
+            document.head.appendChild(script);
+        }
+
+        setInterval(pollStatus, 500);
+        pollStatus();
+    </script>
+</body>
+</html>

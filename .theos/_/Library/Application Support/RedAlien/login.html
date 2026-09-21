@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RedAlien Login</title>
+    <style>
+        @font-face {
+            font-family: 'RSansEB';
+            src: url('RSansEB.ttf') format('truetype');
+        }
+
+        * { 
+            -webkit-box-sizing: border-box; 
+            -moz-box-sizing: border-box; 
+            box-sizing: border-box; 
+            -webkit-tap-highlight-color: transparent; 
+        }
+        
+        html, body {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            font-family: "Helvetica Neue", Helvetica, sans-serif;
+            background-color: #1a1a1b;
+            color: #d7dadc;
+            overflow: hidden;
+        }
+
+        .header {
+            background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #333333), color-stop(50%, #1c1c1c), color-stop(51%, #151515), color-stop(100%, #000000));
+            border-bottom: 1px solid #444;
+            padding: 0 10px;
+            height: 50px; 
+            position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+        }
+
+        .logo-wrap { float: left; height: 50px; }
+        .close-btn {
+            float: left;
+            width: 30px; height: 30px;
+            margin-top: 10px; margin-right: 10px;
+            text-align: center; line-height: 28px;
+            font-size: 20px; font-weight: bold; color: #ff4500;
+            background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #4a4a4a), color-stop(50%, #2b2b2b), color-stop(51%, #222222), color-stop(100%, #111111));
+            border: 1px solid #000; 
+            border-radius: 6px; -webkit-border-radius: 6px;
+            box-shadow: 0 1px 0 rgba(255,255,255,0.15), inset 0 1px 3px rgba(0,0,0,0.6);
+            text-shadow: 0 -1px 0 #000; text-decoration: none;
+        }
+        .close-btn:active {
+            background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #222222), color-stop(50%, #111111), color-stop(51%, #0a0a0a), color-stop(100%, #000000));
+        }
+        .logo {
+            font-family: 'RSansEB', "Helvetica Neue", Helvetica, sans-serif;
+            font-size: 20px; font-weight: bold; letter-spacing: 0.3px; text-shadow: 0 -1px 0 #000; float: left; line-height: 50px;
+        }
+        .logo .red { color: #FF4500; }
+        .logo .alien { color: #d7dadc; }
+
+        .seg-ctrl {
+            float: right; margin-top: 10px;
+            display: block; border: 1px solid #000; 
+            border-radius: 6px; -webkit-border-radius: 6px;
+            overflow: hidden; width: 140px; height: 30px;
+        }
+        .seg-btn {
+            float: left; width: 50%; height: 28px; line-height: 28px; 
+            text-align: center; font-size: 11px; font-weight: bold;
+            color: #999; background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #4a4a4a), color-stop(50%, #2b2b2b), color-stop(51%, #222222), color-stop(100%, #111111));
+            border-right: 1px solid #000; text-shadow: 0 -1px 0 #000; cursor: pointer;
+        }
+        .seg-btn:last-child { border-right: none; }
+        .seg-btn.active {
+            color: #fff; background: -webkit-gradient(linear, left top, left bottom, color-stop(0%, #222222), color-stop(50%, #111111), color-stop(51%, #0a0a0a), color-stop(100%, #000000));
+        }
+
+        .content {
+            position: absolute; top: 50px; bottom: 0; left: 0; right: 0;
+            padding: 15px; overflow-y: auto; -webkit-overflow-scrolling: touch; 
+            text-align: center;
+        }
+        .tab-content { display: none; width: 100%; max-width: 400px; margin: 0 auto; }
+        .tab-content.active { display: block; }
+
+        .qr-container {
+            background: #fff; padding: 10px; 
+            border-radius: 8px; -webkit-border-radius: 8px;
+            display: inline-block; margin-top: 10px; margin-bottom: 15px; border: 1px solid #333;
+        }
+        .qr-container img { display: block; width: 180px; height: 180px; margin: 0 auto; }
+
+        .desc { font-size: 14px; line-height: 1.4; color: #a8aaab; text-shadow: 0 -1px 0 rgba(0,0,0,0.8); margin-bottom: 15px; }
+        .raw-url {
+            font-size: 11px; color: #666; word-wrap: break-word; word-break: break-all;
+            background: rgba(0,0,0,0.3); padding: 8px; 
+            border-radius: 6px; -webkit-border-radius: 6px; 
+            border: 1px solid #222; max-width: 400px; margin: 0 auto; text-align: left;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="logo-wrap">
+            <a href="redalien://close" class="close-btn">&times;</a>
+            <div class="logo"><span class="red">red</span><span class="alien">alien</span></div>
+        </div>
+        <div class="seg-ctrl">
+            <div class="seg-btn active" ontouchstart="switchTab('auth', this); event.preventDefault();" onclick="switchTab('auth', this)">Authorize</div>
+            <div class="seg-btn" ontouchstart="switchTab('submit', this); event.preventDefault();" onclick="switchTab('submit', this)">Submit</div>
+        </div>
+        <div style="clear: both;"></div>
+    </div>
+
+    <div class="content">
+        <div id="tab-auth" class="tab-content active">
+            <p class="desc">Scan the QR code below to grant RedAlien permission.</p>
+            <div class="qr-container">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&amp;margin=0&amp;data=https://www.reddit.com/api/v1/authorize?client_id=FP4sj6FgPVoWZA%26duration=permanent%26response_type=code%26state=ios6%26redirect_uri=http://127.0.0.1:65010/authorize_callback%26scope=identity,edit,flair,history,mysubreddits,privatemessages,read,report,save,submit,subscribe,vote,wikiread" alt="Authorize QR">
+            </div>
+            <div class="raw-url">https://www.reddit.com/api/v1/authorize?client_id=FP4sj6FgPVoWZA&amp;duration=permanent&amp;response_type=code&amp;state=ios6&amp;redirect_uri=http://127.0.0.1:65010/authorize_callback&amp;scope=identity,edit,flair,history,mysubreddits,privatemessages,read,report,save,submit,subscribe,vote,wikiread</div>
+        </div>
+
+        <div id="tab-submit" class="tab-content">
+            <p class="desc">Copy the callback URL and paste it on this page. It's being hosted by your device.</p>
+            <div class="qr-container">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&amp;margin=0&amp;data={{SUBMIT_URL}}" alt="Submit QR">
+            </div>
+            <div class="raw-url">{{SUBMIT_URL}}</div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId, btn) {
+            var btns = document.getElementsByClassName('seg-btn');
+            for (var i = 0; i < btns.length; i++) {
+                btns[i].className = 'seg-btn';
+            }
+            btn.className = 'seg-btn active';
+
+            var tabs = document.getElementsByClassName('tab-content');
+            for (var j = 0; j < tabs.length; j++) {
+                tabs[j].className = 'tab-content';
+            }
+            document.getElementById('tab-' + tabId).className = 'tab-content active';
+        }
+    </script>
+</body>
+</html>
