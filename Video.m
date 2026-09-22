@@ -5,6 +5,7 @@
 
 static NSMutableSet *recodeIDs = nil;
 static void recodeVideo(NSString *videoID);
+static BOOL isValidMP4(NSData *data);
 
 static NSString* loadHTMLTemplate(NSString *filename) {
     NSString *basePath = @"/Library/Application Support/RedAlien";
@@ -60,7 +61,7 @@ NSString* downloadHighestRes(NSString *id, NSString *dir, NSString *filename, BO
         NSData *data = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&error];
 
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
-        if (data && !error && [data length] > 0) {
+        if (data && !error && isValidMP4(data)) {
             NSString *path = [dir stringByAppendingPathComponent:filename];
             if ([data writeToFile:path atomically:YES]) {
                 return path;
@@ -147,4 +148,11 @@ NSString* processVidRequest(NSString *path) {
 
     NSString *template = loadHTMLTemplate(@"vLoading.html");
     return [template stringByReplacingOccurrencesOfString:@"{{STATUS_URL}}" withString:statusURL];
+}
+
+static BOOL isValidMP4(NSData *data) {
+    if (!data || [data length] < 12) return NO;
+    const uint8_t *bytes = (const uint8_t *)[data bytes];
+    if (bytes[4] == 'f' && bytes[5] == 't' && bytes[6] == 'y' && bytes[7] == 'p') { return YES; }
+    return NO;
 }
