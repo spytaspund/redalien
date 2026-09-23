@@ -16,21 +16,23 @@
     if ([NSURLProtocol propertyForKey:@"4thKindContact" inRequest:request]) { return NO; }
 
     NSURL *url = [NSURL URLWithString:removeAmp([request.URL absoluteString])];
+    NSString *host = [url.host lowercaseString];
+
     if (![url.scheme isEqualToString:@"http"] && ![url.scheme isEqualToString:@"https"]) { return NO; }
 
-    NSString *host = [url.host lowercaseString];
     if ([host isEqualToString:@"www.reddit.com"] && [url.path hasPrefix:@"/api/v1/access_token"]) {
         PROTO_LOG(@"Skipping Auth token request: %@", url);
         return NO; 
+    }
+
+    if (![host hasPrefix:@"thumbs"] && ![host hasPrefix:@"ab-thumbs"] && ![host hasPrefix:@"preview"] && ![host hasPrefix:@"external-preview"]) {
+        PROTO_LOG(@"Non-standard request: %@", url, url.query);
     }
 
     if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"] ||
         [host isEqualToString:@"oauth.reddit.com"] || [host hasSuffix:@"redd.it"] || [host isEqualToString:@"i.imgur.com"] ||
         [host isEqualToString:@"alienblue-static.s3.amazonaws.com"] || [host isEqualToString:@"alienblue.s3.amazonaws.com"]) {
         return YES;
-    }
-    if (![host hasPrefix:@"thumbs"] && ![host hasPrefix:@"ab-thumbs"]) {
-        PROTO_LOG(@"Non-standard request: %@", url);
     }
     return NO;
 }
@@ -57,6 +59,11 @@
     NSString *host = [url.host lowercaseString];
     NSString *path = url.path;
     NSString *query = url.query;
+
+    if ([host isEqualToString:@"i.redd.it"]) {
+        PROTO_LOG(@"IMAGE REQUEST: %@%@%@", host, path, query);
+        [request setValue:@"image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5" forHTTPHeaderField:@"Accept"];
+    }
 
     if ([host isEqualToString:@"v.redd.it"]) {
         if (![path hasSuffix:@"/favicon.ico"] && ![path hasSuffix:@"/favicon.png"] && ![path hasSuffix:@".mp4"]) {
@@ -96,11 +103,16 @@
         return;
     }
 
-    if ([request.HTTPMethod isEqualToString:@"POST"] && [path hasPrefix:@"/api/login"]) {
-        NSString *username = [path lastPathComponent];
-        if ([username isEqualToString:@"login"] || username.length == 0) { username = nil; }
+    if ([request.HTTPMethod isEqualToString:@"POST"] && ([path hasPrefix:@"/api/login"] || [path hasPrefix:@"/api/v1/authorize"])) {
+        NSString *lastComponent = [path lastPathComponent];
+        NSString *username = nil;
 
-        NSString *accessToken = [[Auth shared] grabToken:username];
+        if (![lastComponent isEqualToString:@"login"] && ![lastComponent isEqualToString:@"authorize"] && ![lastComponent isEqualToString:@"v1"] && lastComponent.length > 0) {
+            username = lastComponent;
+        }
+
+        NSString *accessToken = username ? [[Auth shared] grabToken:username] : [[Auth shared] grabCurrentToken];
+
         if (accessToken.length > 0) {
             NSString *cookie = [NSString stringWithFormat:@"reddit_session=%@; Domain=.reddit.com; Path=/", accessToken];
             NSString *json = [NSString stringWithFormat:@"{\"json\":{\"errors\":[],\"data\":{\"modhash\":\"oauth_session\",\"cookie\":\"%@\"}}}", accessToken];
@@ -116,7 +128,7 @@
 
     NSString *newQuery = [self processJSON:path originalQuery:query];
 
-    if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"]) {
+    if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"] || [host isEqualToString:@"oauth.reddit.com"]) {
         NSString *accessToken = [[Auth shared] grabCurrentToken];
 
         if (accessToken.length > 0) {
@@ -142,7 +154,7 @@
     NSError *error = nil;
     NSHTTPURLResponse *response = nil;
     NSData *data = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&error];
-    
+
     if (error || !response) {
         [self.client URLProtocol:self didFailWithError:error ?: [NSError errorWithDomain:@"RedAlien" code:-1 userInfo:nil]];
         [pool release];

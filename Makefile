@@ -22,7 +22,4 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 
 THEOS_DEVICE_PORT ?= 22
 
-after-install::
-	install.exec "killall -9 SpringBoard"
-
 .PHONY: after-install
