@@ -10,7 +10,43 @@
 
 #define PROTO_LOG(fmt, ...) NSLog(@"[RedAlien][Protocol] " fmt, ##__VA_ARGS__)
 
+static NSDictionary *parseFormBody(NSData *data) {
+    if (!data || data.length == 0) return nil;
+
+    NSString *bodyStr = [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
+    if (!bodyStr) return nil;
+
+    NSMutableDictionary *dict = [NSMutableDictionary dictionary];
+    NSArray *pairs = [bodyStr componentsSeparatedByString:@"&"];
+
+    for (NSString *pair in pairs) {
+        NSArray *elements = [pair componentsSeparatedByString:@"="];
+        if (elements.count == 2) {
+            NSString *key = [[elements objectAtIndex:0] stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+            NSString *value = [[elements objectAtIndex:1] stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+            if (key && value) {
+                [dict setObject:value forKey:key];
+            }
+        }
+    }
+    return dict;
+}
+
+static NSCondition *loginCondition = nil;
+
 @implementation RAProtocol
+
++ (void)initialize {
+    if (self == [RAProtocol class]) {
+        loginCondition = [[NSCondition alloc] init];
+    }
+}
+
++ (void)unfreezeLoginReq {
+    [loginCondition lock];
+    [loginCondition signal];
+    [loginCondition unlock];
+}
 
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
     if ([NSURLProtocol propertyForKey:@"4thKindContact" inRequest:request]) { return NO; }
@@ -31,7 +67,7 @@
 
     if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"] ||
         [host isEqualToString:@"oauth.reddit.com"] || [host hasSuffix:@"redd.it"] || [host isEqualToString:@"i.imgur.com"] ||
-        [host isEqualToString:@"alienblue-static.s3.amazonaws.com"] || [host isEqualToString:@"alienblue.s3.amazonaws.com"]) {
+        [host isEqualToString:@"alienblue-static.s3.amazonaws.com"] || [host isEqualToString:@"alienblue.s3.amazonaws.com"] ) {
         return YES;
     }
     return NO;
@@ -103,25 +139,52 @@
         return;
     }
 
-    if ([request.HTTPMethod isEqualToString:@"POST"] && ([path hasPrefix:@"/api/login"] || [path hasPrefix:@"/api/v1/authorize"])) {
+    if ([request.HTTPMethod isEqualToString:@"POST"] && [path hasPrefix:@"/api/login"]) {
         NSString *lastComponent = [path lastPathComponent];
         NSString *username = nil;
 
         if (![lastComponent isEqualToString:@"login"] && ![lastComponent isEqualToString:@"authorize"] && ![lastComponent isEqualToString:@"v1"] && lastComponent.length > 0) {
             username = lastComponent;
+        } else {
+            NSDictionary *params = parseFormBody(request.HTTPBody);
+            username = [params objectForKey:@"user"];
+            PROTO_LOG(@"Username parsed from body: %@", username);
         }
 
         NSString *accessToken = username ? [[Auth shared] grabToken:username] : [[Auth shared] grabCurrentToken];
 
         if (accessToken.length > 0) {
-            NSString *cookie = [NSString stringWithFormat:@"reddit_session=%@; Domain=.reddit.com; Path=/", accessToken];
+            NSMutableDictionary *headers = [NSMutableDictionary dictionaryWithObject:@"application/json; charset=utf-8" forKey:@"Content-Type"];
+            [headers setObject:[NSString stringWithFormat:@"reddit_session=%@; Domain=.reddit.com; Path=/", accessToken] forKey:@"Set-Cookie"];
+            
             NSString *json = [NSString stringWithFormat:@"{\"json\":{\"errors\":[],\"data\":{\"modhash\":\"oauth_session\",\"cookie\":\"%@\"}}}", accessToken];
-            [self respondWithStatus:200 headers:@{@"Content-Type": @"application/json; charset=utf-8", @"Set-Cookie": cookie} body:[json dataUsingEncoding:NSUTF8StringEncoding]];
+            [self respondWithStatus:200 headers:headers body:[json dataUsingEncoding:NSUTF8StringEncoding]];
         } else {
-            [[LoginVC class] performSelectorOnMainThread:@selector(presentVC) withObject:nil waitUntilDone:NO];
-            NSString *json = @"{\"json\":{\"errors\":[],\"data\":{\"modhash\":\"oauth_session\",\"cookie\":\"\"}}}";
-            [self respondWithStatus:200 headers:@{@"Content-Type": @"application/json; charset=utf-8"} body:[json dataUsingEncoding:NSUTF8StringEncoding]];
+            PROTO_LOG(@"No token found for '%@'. Displaying LoginVC and freezing thread...", username ? username : @"current user");
+
+            [[LoginVC class] performSelectorOnMainThread:@selector(presentVC) withObject:nil waitUntilDone:YES];
+
+            [loginCondition lock];
+            [loginCondition wait];
+            [loginCondition unlock];
+
+            PROTO_LOG(@"Thread unfrozen! Re-checking token for '%@'...", username ? username : @"current user");
+
+            accessToken = username ? [[Auth shared] grabToken:username] : [[Auth shared] grabCurrentToken];
+
+            if (accessToken.length > 0) {
+                NSMutableDictionary *headers = [NSMutableDictionary dictionaryWithObject:@"application/json; charset=utf-8" forKey:@"Content-Type"];
+                [headers setObject:[NSString stringWithFormat:@"reddit_session=%@; Domain=.reddit.com; Path=/", accessToken] forKey:@"Set-Cookie"];
+                
+                NSString *json = [NSString stringWithFormat:@"{\"json\":{\"errors\":[],\"data\":{\"modhash\":\"oauth_session\",\"cookie\":\"%@\"}}}", accessToken];
+                [self respondWithStatus:200 headers:headers body:[json dataUsingEncoding:NSUTF8StringEncoding]];
+            } else {
+                NSString *errorJson = @"{\"json\":{\"errors\":[[\"WRONG_PASSWORD\",\"OAuth authorization required\",\"passwd\"]]}}";
+                NSDictionary *headers = @{@"Content-Type": @"application/json; charset=utf-8"};
+                [self respondWithStatus:200 headers:headers body:[errorJson dataUsingEncoding:NSUTF8StringEncoding]];
+            }
         }
+
         [pool release];
         return;
     }

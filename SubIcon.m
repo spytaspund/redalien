@@ -4,20 +4,16 @@
 #import "JSONKit.h"
 #import <dlfcn.h>
 
-typedef void (*RAUIGraphicsBeginImageContextWithOptions_t)(CGSize, BOOL, CGFloat);
-static RAUIGraphicsBeginImageContextWithOptions_t pUIGraphicsBeginImageContextWithOptions = NULL;
-static BOOL pInitDone = NO;
-
 #define ICON_LOG(fmt, ...) NSLog(@"[RedAlien][SubIcon] " fmt, ##__VA_ARGS__)
 
-NSString *getIconURL(id value) {
+static NSString *getIconURL(id value) {
     if ([value isKindOfClass:[NSString class]] && [(NSString *)value length] > 0) {
         return (NSString *)value;
     }
     return nil;
 }
 
-NSString* getAvatarURL(NSString* subredditName) {
+static NSString *getAvatarURL(NSString *subredditName) {
     NSString *aboutURL = [NSString stringWithFormat:@"https://www.reddit.com/r/%@/about.json", subredditName];
     NSMutableURLRequest *aboutReq = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:aboutURL]];
     
@@ -63,16 +59,37 @@ NSString* getAvatarURL(NSString* subredditName) {
     return iconURL;
 }
 
-NSData* processIconRequest(NSString *path) {
-    NSString *fileName = [path lastPathComponent];
-    NSArray *components = [fileName componentsSeparatedByString:@"."];
-    NSString *subName = (components.count > 0) ? [components objectAtIndex:0] : nil;
+static UIImage *resizeImage(UIImage *image, CGSize targetSize) {
+    if (&UIGraphicsBeginImageContextWithOptions != NULL) {
+        UIGraphicsBeginImageContextWithOptions(targetSize, NO, 1.0);
+    } else {
+        UIGraphicsBeginImageContext(targetSize);
+    }
+
+    [image drawInRect:CGRectMake(0, 0, targetSize.width, targetSize.height)];
+    UIImage *outImg = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    return outImg;
+}
+
+NSData *processIconRequest(NSString *path) {
+    NSString *filename = [[path lastPathComponent] stringByDeletingPathExtension];
+    if (filename.length == 0) return nil;
+
+    BOOL isRetina = NO;
+    NSString *subName = filename;
+
+    if ([subName hasSuffix:@"@2x"] || [subName hasSuffix:@"@3x"]) {
+        isRetina = YES;
+        subName = [subName substringToIndex:subName.length - 3];
+    }
     
     int randNum = (int)(arc4random() % 20) + 1;
     NSString *defaultIconURL = [NSString stringWithFormat:@"https://www.redditstatic.com/avatars/avatar_default_%02d_0079D3.png", randNum];
     NSString *targetURL = defaultIconURL;
 
-    ICON_LOG(@"Processing icon request: '%@' (Subreddit: '%@')", path, subName);
+    ICON_LOG(@"Processing icon request: '%@' (Subreddit: '%@', Retina: %@)", path, subName, isRetina ? @"YES" : @"NO");
 
     if (subName && subName.length > 0 && ![subName isEqualToString:@"default"]) {
         NSString *fetchedURL = getAvatarURL(subName);
@@ -103,37 +120,15 @@ NSData* processIconRequest(NSString *path) {
         imgData = [NSURLConnection sendSynchronousRequest:imgReq returningResponse:&response error:&error];
     }
 
-    if (!error && imgData && response.statusCode == 200) {
+    if (!error && imgData) {
         UIImage *sourceImg = [UIImage imageWithData:imgData];
-
         if (sourceImg) {
-            CGSize targetSize = CGSizeMake(36.0, 37.0);
-            
-            if (!pInitDone) {
-                pInitDone = YES;
-                pUIGraphicsBeginImageContextWithOptions = (RAUIGraphicsBeginImageContextWithOptions_t)
-                    dlsym(RTLD_DEFAULT, "UIGraphicsBeginImageContextWithOptions");
-            }
-
-            if (pUIGraphicsBeginImageContextWithOptions != NULL) {
-                pUIGraphicsBeginImageContextWithOptions(targetSize, NO, 1.0);
-            } else {
-                UIGraphicsBeginImageContext(targetSize);
-            }
-            
-            [sourceImg drawInRect:CGRectMake(0, 0, targetSize.width, targetSize.height)];
-            UIImage *resizedImg = UIGraphicsGetImageFromCurrentImageContext();
-            UIGraphicsEndImageContext();
-
-            if (resizedImg) {
-                NSData *resizedData = UIImagePNGRepresentation(resizedImg);
-                if (resizedData) {
-                    imgData = resizedData;
-                }
-            }
+            CGSize targetSize = isRetina ? CGSizeMake(74.0, 74.0) : CGSizeMake(36.0, 37.0);
+            UIImage *resizedImage = resizeImage(sourceImg, targetSize);
+            NSData *imgData = UIImagePNGRepresentation(resizedImage);
+            ICON_LOG(@"Successfully processed icon for r/%@ (%lu bytes)", subName, (unsigned long)imgData.length);
+            return imgData;
         }
-        ICON_LOG(@"Successfully processed icon for r/%@ (%lu bytes)", subName, (unsigned long)imgData.length);
-        return imgData;
     }
 
     ICON_LOG(@"ERROR: Icon download failed for r/%@!", subName);

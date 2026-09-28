@@ -1,6 +1,6 @@
 Package: dev.spytaspund.redalien
 Name: RedAlien
-Depends: mobilesubstrate, firmware (>= 3.0), com.nin9tyfour.ffmpeg
+Depends: mobilesubstrate, firmware (>= 3.0), dev.spytaspund.ffmpeg
 Recommends: com.skyglow.tlsfix
 Version: 0.0.3
 Architecture: iphoneos-arm

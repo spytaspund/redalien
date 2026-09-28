@@ -125,7 +125,7 @@
             window.statusData = null;
             var script = document.createElement('script');
             script.id = 'status-script';
-            script.src = statusURL + (statusURL.indexOf('?') >= 0 ? '&' : '?') + 't=' + new Date().getTime();
+            script.src = statusURL;
             
             script.onload = function() {
                 if (window.statusData) {

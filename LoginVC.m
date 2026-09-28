@@ -1,4 +1,5 @@
 #import "LoginVC.h"
+#import "RAProtocol.h"
 #import "HTTPServer.h"
 #import <ifaddrs.h>
 #import <arpa/inet.h>
@@ -38,34 +39,41 @@ static NSString *getLocalIP() {
 
 @implementation LoginVC
 
-+ (void)presentVC {
++ (UIViewController *)topViewController {
     UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    UIViewController *topVC = nil;
+    if (!keyWindow) {
+        NSArray *windows = [UIApplication sharedApplication].windows;
+        if (windows.count > 0) keyWindow = [windows objectAtIndex:0];
+    }
+    
+    UIViewController *topVC = keyWindow.rootViewController;
+    while (topVC.presentedViewController || topVC.modalViewController) {
+        topVC = topVC.presentedViewController ? topVC.presentedViewController : topVC.modalViewController;
+    }
+    return topVC;
+}
 
-    for (UIView *subview in keyWindow.subviews) {
-        id nextResponder = [subview nextResponder];
-        if ([nextResponder isKindOfClass:[UIViewController class]]) {
-            topVC = (UIViewController *)nextResponder;
-            break;
++ (void)presentVC {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *topVC = [self topViewController];
+        NSLog(@"[RedAlien][LoginVC] Attempting to present on topVC: %@", topVC);
+
+        if (!topVC) {
+            NSLog(@"[RedAlien][LoginVC] ERROR: Could not find top UIViewController!");
+            return;
         }
-    }
 
-    while (topVC.modalViewController) {
-        topVC = topVC.modalViewController;
-    }
+        LoginVC *loginVC = [[LoginVC alloc] init];
+        loginVC.modalTransitionStyle = UIModalTransitionStyleCoverVertical;
 
-    if (!topVC) return;
+        if ([topVC respondsToSelector:@selector(presentViewController:animated:completion:)]) {
+            [topVC presentViewController:loginVC animated:YES completion:nil];
+        } else {
+            [topVC presentModalViewController:loginVC animated:YES];
+        }
 
-    LoginVC *loginVC = [[LoginVC alloc] init];
-    loginVC.modalTransitionStyle = UIModalTransitionStyleCoverVertical;
-
-    if ([topVC respondsToSelector:@selector(presentViewController:animated:completion:)]) {
-        [topVC presentViewController:loginVC animated:YES completion:nil];
-    } else {
-        [topVC presentModalViewController:loginVC animated:YES];
-    }
-
-    [loginVC release];
+        [loginVC release];
+    });
 }
 
 - (void)viewDidLoad {
@@ -117,6 +125,8 @@ static NSString *getLocalIP() {
     } else {
         [self dismissModalViewControllerAnimated:YES];
     }
+
+    [RAProtocol unfreezeLoginReq];
 }
 
 - (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType {

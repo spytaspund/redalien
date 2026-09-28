@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 
 @interface RAProtocol : NSURLProtocol
++ (void)unfreezeLoginReq;
+
 + (BOOL)canInitWithRequest:(NSURLRequest *)request;
 
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request;
