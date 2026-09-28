@@ -128,118 +128,119 @@
     return [self grabToken:@"_REDDIT"];
 }
 
+- (void)postNotif {
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"RALoginSuccess" object:nil];
+}
+
 - (NSString *) grabToken:(NSString *)username {
     if (!username || username.length == 0) { username = @"_REDDIT"; }
     if (![username isEqualToString:@"_REDDIT"]) { [self setUser:username ]; }
-    @synchronized(self) {
-        NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-        NSDictionary *account = [self accountDict:username];
-        NSString *lastToken = [account objectForKey:@"token"];
-        double expiry = [[account objectForKey:@"expiry"] doubleValue];
+    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSDictionary *account = [self accountDict:username];
+    NSString *lastToken = [account objectForKey:@"token"];
+    double expiry = [[account objectForKey:@"expiry"] doubleValue];
+    
+    if (lastToken.length > 0 && expiry > 0) {
+        NSDate *expireDate = [NSDate dateWithTimeIntervalSince1970:expiry];
+        if ([expireDate timeIntervalSinceNow] > 60) {
+            AUTH_LOG(@"Using cached %@ token (active till %@)", username, expireDate);
+            NSString *outToken = [lastToken retain];
+            [pool release];
+            return [outToken autorelease];
+        }
+    }
+
+    BOOL isApp = [username isEqualToString:@"_REDDIT"];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://www.reddit.com/api/v1/access_token"]];
+    [request setTimeoutInterval:10.0];
+    [request setValue:@"application/x-www-form-urlencoded" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:@"script:RedAlien:v1.0 (by /u/spez)" forHTTPHeaderField:@"User-Agent"]; // hehe
+    [request setHTTPMethod:@"POST"];
+    NSString *body = nil;
+
+    if (isApp) {
+        NSString *clientID = [self rClientID];
+        NSString *deviceID = genUUIDv4();
+        NSString *rawAuth = [NSString stringWithFormat:@"%@:", clientID];
+        NSData *utf8Auth = [rawAuth dataUsingEncoding:NSUTF8StringEncoding];
         
-        if (lastToken.length > 0 && expiry > 0) {
-            NSDate *expireDate = [NSDate dateWithTimeIntervalSince1970:expiry];
-            if ([expireDate timeIntervalSinceNow] > 60) {
-                AUTH_LOG(@"Using cached %@ token (active till %@)", username, expireDate);
-                NSString *outToken = [[lastToken retain] autorelease];
-                [pool release];
-                return outToken;
-            }
-        }
+        [request setValue:[NSString stringWithFormat:@"Basic %@", encodeBase64(utf8Auth)] forHTTPHeaderField:@"Authorization"];
+        body = [NSString stringWithFormat:@"grant_type=https://oauth.reddit.com/grants/installed_client&device_id=%@", deviceID];
+    } else {
+        NSString *clientID = [self uClientID];
+        NSString *clientSecret = [self uClientSecret];
+        NSString *refreshToken = [account objectForKey:@"refreshToken"];
+        NSString *authCode = [account objectForKey:@"authCode"];
 
-        BOOL isApp = [username isEqualToString:@"_REDDIT"];
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://www.reddit.com/api/v1/access_token"]];
-        [request setValue:@"application/x-www-form-urlencoded" forHTTPHeaderField:@"Content-Type"];
-        [request setValue:@"script:RedAlien:v1.0 (by /u/spez)" forHTTPHeaderField:@"User-Agent"]; // hehe
-        [request setHTTPMethod:@"POST"];
-        NSString *body = nil;
+        NSString *rawAuth = [NSString stringWithFormat:@"%@:%@", clientID, clientSecret];
+        NSData *utf8Auth = [rawAuth dataUsingEncoding:NSUTF8StringEncoding];
+        [request setValue:[NSString stringWithFormat:@"Basic %@", encodeBase64(utf8Auth)] forHTTPHeaderField:@"Authorization"];
 
-        if (isApp) {
-            NSString *clientID = [self rClientID];
-            NSString *deviceID = genUUIDv4();
-            NSString *rawAuth = [NSString stringWithFormat:@"%@:", clientID];
-            NSData *utf8Auth = [rawAuth dataUsingEncoding:NSUTF8StringEncoding];
-            
-            [request setValue:[NSString stringWithFormat:@"Basic %@", encodeBase64(utf8Auth)] forHTTPHeaderField:@"Authorization"];
-            body = [NSString stringWithFormat:@"grant_type=https://oauth.reddit.com/grants/installed_client&device_id=%@", deviceID];
+        if (refreshToken.length > 0) {
+            body = [NSString stringWithFormat:@"grant_type=refresh_token&refresh_token=%@", urlEncode(refreshToken)];
+        } else if (authCode.length > 0) {
+            body = [NSString stringWithFormat:@"grant_type=authorization_code&code=%@&redirect_uri=%@", urlEncode(authCode), urlEncode(@"http://127.0.0.1:65010/authorize_callback")];
         } else {
-            NSString *clientID = [self uClientID];
-            NSString *clientSecret = [self uClientSecret];
-            NSString *refreshToken = [account objectForKey:@"refreshToken"];
-            NSString *authCode = [account objectForKey:@"authCode"];
-
-            NSString *rawAuth = [NSString stringWithFormat:@"%@:%@", clientID, clientSecret];
-            NSData *utf8Auth = [rawAuth dataUsingEncoding:NSUTF8StringEncoding];
-            [request setValue:[NSString stringWithFormat:@"Basic %@", encodeBase64(utf8Auth)] forHTTPHeaderField:@"Authorization"];
-
-            if (refreshToken.length > 0) {
-                body = [NSString stringWithFormat:@"grant_type=refresh_token&refresh_token=%@", urlEncode(refreshToken)];
-            } else if (authCode.length > 0) {
-                body = [NSString stringWithFormat:@"grant_type=authorization_code&code=%@&redirect_uri=%@", urlEncode(authCode), urlEncode(@"http://127.0.0.1:65010/authorize_callback")];
-            } else {
-                AUTH_LOG(@"No credentials to refresh token for user '%@'", username);
-                [pool release];
-                return nil;
-            }
-        }
-
-        [request setHTTPBody:[body dataUsingEncoding:NSUTF8StringEncoding]];
-
-        NSError *error = nil;
-        NSHTTPURLResponse *response = nil;
-        [NSURLProtocol setProperty:[NSNumber numberWithBool:YES] forKey:@"4thKindContact" inRequest:request];
-        NSData *data = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&error];
-
-        if (error || !data || response.statusCode != 200) {
-            NSString *errorBody = data ? [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease] : nil;
-            AUTH_LOG(@"ERROR GETTING TOKEN FOR %@! status=%ld, body=%@", username, (long)response.statusCode, errorBody);
+            AUTH_LOG(@"No credentials to refresh token for user '%@'", username);
             [pool release];
             return nil;
         }
+    }
 
-        NSDictionary *json = [data objectFromJSONData];
+    [request setHTTPBody:[body dataUsingEncoding:NSUTF8StringEncoding]];
 
-        if (!json || ![json isKindOfClass:[NSDictionary class]]) {
-            AUTH_LOG(@"ERROR: JSONKit failed to parse response for '%@'", username);
-            [pool release];
-            return nil;
-        }
+    NSError *error = nil;
+    NSHTTPURLResponse *response = nil;
+    [NSURLProtocol setProperty:[NSNumber numberWithBool:YES] forKey:@"4thKindContact" inRequest:request];
+    NSData *data = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&error];
 
-        NSString *accessToken = [json objectForKey:@"access_token"];
-        if (accessToken.length > 0) {
-            double expiresIn = [[json objectForKey:@"expires_in"] doubleValue];
-            if (expiresIn <= 0) expiresIn = 86400.0;
-
-            NSDate *newExpireDate = [NSDate dateWithTimeIntervalSinceNow:expiresIn];
-            NSMutableDictionary *newAccount = account ? [[account mutableCopy] autorelease] : [NSMutableDictionary dictionary];
-
-            [newAccount setObject:accessToken forKey:@"token"];
-            [newAccount setObject:[NSNumber numberWithDouble:[newExpireDate timeIntervalSince1970]] forKey:@"expiry"];
-
-            NSString *freshRefresh = [json objectForKey:@"refresh_token"];
-            if (freshRefresh && freshRefresh.length > 0) {
-                [newAccount setObject:freshRefresh forKey:@"refreshToken"];
-            }
-
-            [newAccount removeObjectForKey:@"authCode"];
-            [self saveAccountDict:newAccount forUser:username];
-
-            AUTH_LOG(@"Successfully updated token for %@, expires: %@", username, newExpireDate);
-            if (![username isEqualToString:@"_REDDIT"]) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [[NSNotificationCenter defaultCenter] postNotificationName:@"RALoginSuccess" object:nil];
-                });
-            }
-
-            NSString *result = [[accessToken retain] autorelease];
-            [pool release];
-            return result;
-        }
-
+    if (error || !data || response.statusCode != 200) {
+        NSString *errorBody = data ? [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease] : nil;
+        AUTH_LOG(@"ERROR GETTING TOKEN FOR %@! status=%ld, body=%@", username, (long)response.statusCode, errorBody);
         [pool release];
         return nil;
     }
+
+    NSDictionary *json = [data objectFromJSONData];
+
+    if (!json || ![json isKindOfClass:[NSDictionary class]]) {
+        AUTH_LOG(@"ERROR: JSONKit failed to parse response for '%@'", username);
+        [pool release];
+        return nil;
+    }
+
+    NSString *accessToken = [json objectForKey:@"access_token"];
+    if (accessToken.length > 0) {
+        double expiresIn = [[json objectForKey:@"expires_in"] doubleValue];
+        if (expiresIn <= 0) expiresIn = 86400.0;
+
+        NSDate *newExpireDate = [NSDate dateWithTimeIntervalSinceNow:expiresIn];
+        NSMutableDictionary *newAccount = account ? [[account mutableCopy] autorelease] : [NSMutableDictionary dictionary];
+
+        [newAccount setObject:accessToken forKey:@"token"];
+        [newAccount setObject:[NSNumber numberWithDouble:[newExpireDate timeIntervalSince1970]] forKey:@"expiry"];
+
+        NSString *freshRefresh = [json objectForKey:@"refresh_token"];
+        if (freshRefresh && freshRefresh.length > 0) {
+            [newAccount setObject:freshRefresh forKey:@"refreshToken"];
+        }
+
+        [newAccount removeObjectForKey:@"authCode"];
+        [self saveAccountDict:newAccount forUser:username];
+
+        AUTH_LOG(@"Successfully updated token for %@, expires: %@", username, newExpireDate);
+        if (![username isEqualToString:@"_REDDIT"]) {
+            [self performSelectorOnMainThread:@selector(postNotif) withObject:nil waitUntilDone:NO];
+        }
+
+        NSString *result = [accessToken retain];
+        [pool release];
+        return [result autorelease];
+    }
+
+    [pool release];
+    return nil;
 }
 
 @end

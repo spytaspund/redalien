@@ -34,6 +34,10 @@ static NSString *getLocalIP() {
     return addr;
 }
 
+static UIWindow *loginWindow = nil;
+static UIWindow *prevWindow = nil;
+static LoginVC *currentLoginVC = nil;
+
 @interface LoginVC () <UIAlertViewDelegate>
 @end
 
@@ -54,26 +58,39 @@ static NSString *getLocalIP() {
 }
 
 + (void)presentVC {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *topVC = [self topViewController];
-        NSLog(@"[RedAlien][LoginVC] Attempting to present on topVC: %@", topVC);
+    if (loginWindow) {
+        [prevWindow release];
+        prevWindow = nil;
+    }
+    prevWindow = [[[UIApplication sharedApplication] keyWindow] retain];
 
-        if (!topVC) {
-            NSLog(@"[RedAlien][LoginVC] ERROR: Could not find top UIViewController!");
-            return;
-        }
+    CGRect screenBounds = [UIScreen mainScreen].bounds;
+    CGRect startFrame = CGRectMake(0, screenBounds.size.height, screenBounds.size.width, screenBounds.size.height);
 
-        LoginVC *loginVC = [[LoginVC alloc] init];
-        loginVC.modalTransitionStyle = UIModalTransitionStyleCoverVertical;
+    loginWindow = [[UIWindow alloc] initWithFrame:startFrame];
+    loginWindow.windowLevel = UIWindowLevelNormal + 10.0;
+    loginWindow.backgroundColor = [UIColor clearColor];
 
-        if ([topVC respondsToSelector:@selector(presentViewController:animated:completion:)]) {
-            [topVC presentViewController:loginVC animated:YES completion:nil];
-        } else {
-            [topVC presentModalViewController:loginVC animated:YES];
-        }
+    currentLoginVC = [[LoginVC alloc] init];
+    
+    if ([loginWindow respondsToSelector:@selector(setRootViewController:)]) { loginWindow.rootViewController = currentLoginVC; }
+    else {
+        currentLoginVC.view.frame = loginWindow.bounds;
+        [loginWindow addSubview:currentLoginVC.view];
+    }
 
-        [loginVC release];
-    });
+    [loginWindow makeKeyAndVisible];
+
+    [UIView beginAnimations:@"presentLoginVC" context:NULL];
+    [UIView setAnimationDuration:0.35];
+    [UIView setAnimationCurve:UIViewAnimationCurveEaseOut];
+    loginWindow.frame = screenBounds;
+    [UIView commitAnimations];
+}
+
++ (void)showVC {
+    if (![NSThread isMainThread]) { [self performSelectorOnMainThread:@selector(presentVC) withObject:nil waitUntilDone:NO]; }
+    else { [self presentVC]; }
 }
 
 - (void)viewDidLoad {
@@ -119,14 +136,47 @@ static NSString *getLocalIP() {
     [super dealloc];
 }
 
-- (void)handleLoginSuccess {
-    if ([self respondsToSelector:@selector(dismissViewControllerAnimated:completion:)]) {
-        [self dismissViewControllerAnimated:YES completion:nil];
-    } else {
-        [self dismissModalViewControllerAnimated:YES];
+- (void)dismissVC {
+    if (!loginWindow) {
+        [RAProtocol unfreezeLoginReq];
+        return;
+    }
+
+    CGRect screenBounds = [UIScreen mainScreen].bounds;
+    CGRect endFrame = CGRectMake(0, screenBounds.size.height, screenBounds.size.width, screenBounds.size.height);
+
+    [UIView beginAnimations:@"dismissLoginVC" context:NULL];
+    [UIView setAnimationDuration:0.35];
+    [UIView setAnimationCurve:UIViewAnimationCurveEaseIn];
+    [UIView setAnimationDelegate:self];
+    [UIView setAnimationDidStopSelector:@selector(dismissAnimDidStop:finished:context:)];
+    loginWindow.frame = endFrame;
+    [UIView commitAnimations];
+}
+
+- (void)dismissAnimDidStop:(NSString *)animationID finished:(NSNumber *)finished context:(void *)context {
+    loginWindow.hidden = YES;
+
+    if (prevWindow) {
+        [prevWindow makeKeyWindow];
+        [prevWindow release];
+        prevWindow = nil;
+    }
+
+    [loginWindow release];
+    loginWindow = nil;
+
+    if (currentLoginVC) {
+        [currentLoginVC release];
+        currentLoginVC = nil;
     }
 
     [RAProtocol unfreezeLoginReq];
+}
+
+- (void)handleLoginSuccess {
+    if (![NSThread isMainThread]) { [self performSelectorOnMainThread:@selector(dismissVC) withObject:nil waitUntilDone:NO]; }
+    else { [self dismissVC]; }
 }
 
 - (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType {
