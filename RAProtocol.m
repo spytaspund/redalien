@@ -66,8 +66,8 @@ static NSCondition *loginCondition = nil;
     }
 
     if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"] ||
-        [host isEqualToString:@"oauth.reddit.com"] || [host hasSuffix:@"redd.it"] || [host isEqualToString:@"i.imgur.com"] ||
-        [host isEqualToString:@"alienblue-static.s3.amazonaws.com"] || [host isEqualToString:@"alienblue.s3.amazonaws.com"] ) {
+        [host isEqualToString:@"gateway.reddit.com"] || [host isEqualToString:@"oauth.reddit.com"] || [host hasSuffix:@"redd.it"] || 
+        [host isEqualToString:@"i.imgur.com"] || [host isEqualToString:@"alienblue-static.s3.amazonaws.com"] || [host isEqualToString:@"alienblue.s3.amazonaws.com"] ) {
         return YES;
     }
     return NO;
@@ -78,15 +78,14 @@ static NSCondition *loginCondition = nil;
 }
 
 - (void)startLoading {
-    NSMutableURLRequest *request = [self.request mutableCopy];
-    [self performSelectorInBackground:@selector(patchRequest:) withObject:request];
-    [request release];
+    [self performSelectorInBackground:@selector(patchRequest:) withObject:self.request];
 }
 
 - (void)stopLoading {}
 
-- (void)patchRequest:(NSMutableURLRequest *)request {
+- (void)patchRequest:(NSMutableURLRequest *)stockRequest {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSMutableURLRequest *request = [stockRequest mutableCopy];
 
     NSURL *url = [NSURL URLWithString:removeAmp([request.URL absoluteString])];
     if (url && ![url isEqual:request.URL]) { [request setURL:url]; }
@@ -96,6 +95,16 @@ static NSCondition *loginCondition = nil;
     NSString *path = url.path;
     NSString *query = url.query;
 
+    PROTO_LOG(@"PATH IZ %@", path);
+    if ([path isEqualToString:@"/redditmobile/1/ios/config"]) {
+        PROTO_LOG(@"YEAH I GOT THIS REQUEST HAII HELLO!!");
+        NSString *json = @"{\"reddit_url\": \"https://www.reddit.com\"}";
+        [self respondWithStatus:200 headers:@{@"Content-Type": @"text/html"} body:[json dataUsingEncoding:NSUTF8StringEncoding]];
+        [request release];
+        [pool release];
+        return;
+    }
+    
     if ([host isEqualToString:@"i.redd.it"]) {
         PROTO_LOG(@"IMAGE REQUEST: %@%@%@", host, path, query);
         [request setValue:@"image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5" forHTTPHeaderField:@"Accept"];
@@ -105,6 +114,7 @@ static NSCondition *loginCondition = nil;
         if (![path hasSuffix:@"/favicon.ico"] && ![path hasSuffix:@"/favicon.png"] && ![path hasSuffix:@".mp4"]) {
             NSData *vidData = [processVidRequest(path) dataUsingEncoding:NSUTF8StringEncoding];
             [self respondWithStatus:200 headers:@{@"Content-Type": @"text/html"} body:vidData];
+            [request release];
             [pool release];
             return;
         }
@@ -119,6 +129,7 @@ static NSCondition *loginCondition = nil;
             @"Cache-Control": @"no-cache, no-store, must-revalidate"
         };
         [self respondWithStatus:200 headers:headers body:htmlData];
+        [request release];
         [pool release];
         return;
     }
@@ -135,6 +146,7 @@ static NSCondition *loginCondition = nil;
         } else {
             [self respondWithStatus:302 headers:@{@"Location": @"https://www.redditstatic.com/avatars/avatar_default_03_EA0027.png"} body:nil];
         }
+        [request release];
         [pool release];
         return;
     }
@@ -185,6 +197,7 @@ static NSCondition *loginCondition = nil;
             }
         }
 
+        [request release];
         [pool release];
         return;
     }
@@ -220,6 +233,7 @@ static NSCondition *loginCondition = nil;
 
     if (error || !response) {
         [self.client URLProtocol:self didFailWithError:error ?: [NSError errorWithDomain:@"RedAlien" code:-1 userInfo:nil]];
+        [request release];
         [pool release];
         return;
     }
@@ -260,6 +274,7 @@ static NSCondition *loginCondition = nil;
     }
 
     [self respondWithStatus:response.statusCode headers:response.allHeaderFields body:data];
+    [request release];
     [pool release];
 }
 
