@@ -178,7 +178,10 @@ static void *handleClient(void *arg) {
                             ssize_t written = write(sock, fileBuf, readBytes);
                             if (written <= 0) break;
 
-                            bytesLeft -= readBytes;
+                            bytesLeft -= written;
+                            if (written < readBytes) {
+                                fseeko(f, written - readBytes, SEEK_CUR);
+                            }
                         }
                         fclose(f);
                     } else {

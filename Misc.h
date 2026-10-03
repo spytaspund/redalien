@@ -3,7 +3,14 @@
 static NSString * const prefsID = @"dev.spytaspund.redalien";
 
 static NSString * const userAgent = @"Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0";
-static NSString * const ffFlags = @"-y -c:v copy -bsf:v h264_mp4toannexb -c:a copy -bsf:a aac_adtstoasc -hls_time 4 -hls_list_size 0";
+static NSString * const ffFlags = 
+    @"-y "
+    @"-c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p "
+    @"-preset ultrafast -crf 26 -r 30 "
+    @"-c:a aac -ac 2 -ar 44100 -b:a 128k "
+    @"-hls_time 4 -hls_list_size 0 -hls_segment_filename \"segment_%03d.ts\"";
+
+static NSString * const tempDir = @"/var/tmp/redalien";
 
 // i <3 github dorks
 static NSString * const rClientID64 = @"b2hYcG9xclpZdWIxa2c=";

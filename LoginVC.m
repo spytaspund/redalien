@@ -9,10 +9,6 @@
 - (void)dismissViewControllerAnimated:(BOOL)flag completion:(void (^)(void))completion;
 @end
 
-@interface UIWebView (RACompat)
-- (UIScrollView *)scrollView;
-@end
-
 static NSString *getLocalIP() {
     NSString *addr = @"127.0.0.1";
     struct ifaddrs *interfaces = NULL;
@@ -22,7 +18,7 @@ static NSString *getLocalIP() {
     if (success == 0) {
         temp_addr = interfaces;
         while (temp_addr != NULL) {
-            if (temp_addr->ifa_addr->sa_family == AF_INET) {
+            if (temp_addr->ifa_addr && temp_addr->ifa_addr->sa_family == AF_INET) {
                 if ([[NSString stringWithUTF8String:temp_addr->ifa_name] isEqualToString:@"en0"]) {
                     addr = [NSString stringWithUTF8String:inet_ntoa(((struct sockaddr_in *)temp_addr->ifa_addr)->sin_addr)];
                 }
@@ -30,7 +26,7 @@ static NSString *getLocalIP() {
             temp_addr = temp_addr->ifa_next;
         }
     }
-    freeifaddrs(interfaces);
+    if (interfaces) freeifaddrs(interfaces);
     return addr;
 }
 
@@ -38,30 +34,17 @@ static UIWindow *loginWindow = nil;
 static UIWindow *prevWindow = nil;
 static LoginVC *currentLoginVC = nil;
 
-@interface LoginVC () <UIAlertViewDelegate>
+@interface LoginVC () <UIAlertViewDelegate, UIWebViewDelegate>
+@property (nonatomic, retain) UIWebView *webView;
 @end
 
 @implementation LoginVC
 
-+ (UIViewController *)topViewController {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
-    if (!keyWindow) {
-        NSArray *windows = [UIApplication sharedApplication].windows;
-        if (windows.count > 0) keyWindow = [windows objectAtIndex:0];
-    }
-    
-    UIViewController *topVC = keyWindow.rootViewController;
-    while (topVC.presentedViewController || topVC.modalViewController) {
-        topVC = topVC.presentedViewController ? topVC.presentedViewController : topVC.modalViewController;
-    }
-    return topVC;
-}
+@synthesize webView = _webView;
 
 + (void)presentVC {
-    if (loginWindow) {
-        [prevWindow release];
-        prevWindow = nil;
-    }
+    if (loginWindow != nil) return;
+
     prevWindow = [[[UIApplication sharedApplication] keyWindow] retain];
 
     CGRect screenBounds = [UIScreen mainScreen].bounds;
@@ -73,8 +56,9 @@ static LoginVC *currentLoginVC = nil;
 
     currentLoginVC = [[LoginVC alloc] init];
     
-    if ([loginWindow respondsToSelector:@selector(setRootViewController:)]) { loginWindow.rootViewController = currentLoginVC; }
-    else {
+    if ([loginWindow respondsToSelector:@selector(setRootViewController:)]) {
+        [loginWindow performSelector:@selector(setRootViewController:) withObject:currentLoginVC];
+    } else {
         currentLoginVC.view.frame = loginWindow.bounds;
         [loginWindow addSubview:currentLoginVC.view];
     }
@@ -89,8 +73,11 @@ static LoginVC *currentLoginVC = nil;
 }
 
 + (void)showVC {
-    if (![NSThread isMainThread]) { [self performSelectorOnMainThread:@selector(presentVC) withObject:nil waitUntilDone:NO]; }
-    else { [self presentVC]; }
+    if (![NSThread isMainThread]) { 
+        [self performSelectorOnMainThread:@selector(presentVC) withObject:nil waitUntilDone:NO]; 
+    } else { 
+        [self presentVC]; 
+    }
 }
 
 - (void)viewDidLoad {
@@ -99,17 +86,19 @@ static LoginVC *currentLoginVC = nil;
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleLoginSuccess) name:@"RALoginSuccess" object:nil];
     self.view.backgroundColor = [UIColor colorWithWhite:0.1 alpha:1.0];
 
-    UIWebView *webView = [[UIWebView alloc] initWithFrame:self.view.bounds];
-    webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    webView.delegate = self;
+    self.webView = [[[UIWebView alloc] initWithFrame:self.view.bounds] autorelease];
+    self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.webView.delegate = self;
 
-    if ([webView respondsToSelector:@selector(scrollView)]) {
-        UIScrollView *sv = [webView scrollView];
-        [sv setBounces:NO];
+    if ([self.webView respondsToSelector:@selector(scrollView)]) {
+        id sv = [self.webView performSelector:@selector(scrollView)];
+        if ([sv respondsToSelector:@selector(setBounces:)]) {
+            [sv setBounces:NO];
+        }
     } else {
-        for (UIView *subview in webView.subviews) {
-            if ([subview isKindOfClass:[UIScrollView class]]) {
-                [(UIScrollView *)subview setBounces:NO];
+        for (UIView *subview in self.webView.subviews) {
+            if ([subview respondsToSelector:@selector(setBounces:)]) {
+                [(id)subview setBounces:NO];
             }
         }
     }
@@ -126,13 +115,20 @@ static LoginVC *currentLoginVC = nil;
         htmlString = [htmlString stringByReplacingOccurrencesOfString:@"{{SUBMIT_URL}}" withString:submitURL];
     }
 
-    [webView loadHTMLString:htmlString baseURL:nil];
-    [self.view addSubview:webView];
-    [webView release];
+    [self.webView loadHTMLString:htmlString baseURL:nil];
+    [self.view addSubview:self.webView];
 }
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    
+    if (_webView) {
+        _webView.delegate = nil;
+        [_webView stopLoading];
+        [_webView release];
+        _webView = nil;
+    }
+
     [super dealloc];
 }
 
@@ -175,8 +171,11 @@ static LoginVC *currentLoginVC = nil;
 }
 
 - (void)handleLoginSuccess {
-    if (![NSThread isMainThread]) { [self performSelectorOnMainThread:@selector(dismissVC) withObject:nil waitUntilDone:NO]; }
-    else { [self dismissVC]; }
+    if (![NSThread isMainThread]) { 
+        [self performSelectorOnMainThread:@selector(dismissVC) withObject:nil waitUntilDone:NO]; 
+    } else { 
+        [self dismissVC]; 
+    }
 }
 
 - (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType {

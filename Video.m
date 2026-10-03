@@ -3,6 +3,8 @@
 #import "HTTPServer.h"
 #import "Misc.h"
 
+#define VIDEO_LOG(fmt, ...) NSLog(@"[RedAlien][Video] " fmt, ##__VA_ARGS__)
+
 static NSMutableSet *recodeIDs = nil;
 static void recodeVideo(NSString *videoID);
 static BOOL isValidMP4(NSData *data);
@@ -72,11 +74,21 @@ NSString* downloadHighestRes(NSString *id, NSString *dir, NSString *filename, BO
     return nil;
 }
 
+static NSString *getTempDir() {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:tempDir]) {
+        [fm createDirectoryAtPath:tempDir withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    return tempDir;
+}
+
 static void recodeVideo(NSString *videoID) {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-    NSString *tempDir = [NSTemporaryDirectory() stringByAppendingPathComponent:videoID];
+    NSString *tempDir = [getTempDir() stringByAppendingPathComponent:videoID];
     [[NSFileManager defaultManager] createDirectoryAtPath:tempDir withIntermediateDirectories:YES attributes:nil error:nil];
+
+    VIDEO_LOG(@"Video download dir: %@", tempDir);
 
     updateStatus(tempDir, 10, @"Downloading video...", NO, NO);
     NSString *videoPath = downloadHighestRes(videoID, tempDir, @"video.mp4", YES);
@@ -89,11 +101,11 @@ static void recodeVideo(NSString *videoID) {
         
         NSString *playlistPath = [tempDir stringByAppendingPathComponent:@"playlist.m3u8"];
         NSString *ffCommand = [NSString stringWithFormat:@"ffmpeg -i '%@' -i '%@' %@ '%@' > /tmp/ffmpeg.log 2>&1", videoPath, audioPath, ffFlags, playlistPath];
-
+        VIDEO_LOG(@"FFCOMMAND: %@", ffCommand);
         system([ffCommand UTF8String]);
 
-        [[NSFileManager defaultManager] removeItemAtPath:videoPath error:nil];
-        [[NSFileManager defaultManager] removeItemAtPath:audioPath error:nil];
+        //[[NSFileManager defaultManager] removeItemAtPath:videoPath error:nil];
+        //[[NSFileManager defaultManager] removeItemAtPath:audioPath error:nil];
 
         updateStatus(tempDir, 100, @"Done!", YES, NO);
     } else {

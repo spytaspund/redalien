@@ -17,36 +17,41 @@
             height: 100%;
             background: #000;
             overflow: hidden;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
         }
         video {
+            display: block;
             width: 100%;
             height: 100%;
-            object-fit: contain;
             background: #000;
         }
     </style>
 </head>
 <body>
-    <video id="player" controls autoplay playsinline -webkit-playsinline src="{{PLAYLIST_URL}}"></video>
-    
+    <video id="player" controls src="{{PLAYLIST_URL}}"></video>
+
     <script>
-        document.addEventListener('touchmove', function(e) {
-            e.preventDefault();
+        document.body.addEventListener('touchmove', function(e) {
+            if (e.target.tagName.toLowerCase() !== 'video') {
+                e.preventDefault();
+            }
         }, false);
 
-        function playVideo() {
-            var v = document.getElementById('player');
-            if (v && v.paused) {
-                v.play();
+        var player = document.getElementById('player');
+
+        function safePlay() {
+            if (player && player.paused) {
+                try {
+                    player.play();
+                } catch(err) {}
             }
         }
 
-        document.addEventListener('DOMContentLoaded', playVideo, false);
         window.addEventListener('load', function() {
-            setTimeout(playVideo, 100);
-            setTimeout(playVideo, 500);
+            setTimeout(safePlay, 300);
+        }, false);
+
+        document.addEventListener('touchstart', function() {
+            safePlay();
         }, false);
     </script>
 </body>
