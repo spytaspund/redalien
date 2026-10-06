@@ -243,4 +243,21 @@
     return nil;
 }
 
+- (NSInteger)tokenExpiry:(NSString *)username {
+    if (!username || username.length == 0) { username = @"_REDDIT"; }
+    
+    NSDictionary *account = [self accountDict:username];
+    double expiry = [[account objectForKey:@"expiry"] doubleValue];
+    
+    if (expiry > 0) {
+        double now = [[NSDate date] timeIntervalSince1970];
+        double remaining = expiry - now;
+        if (remaining > 0) {
+            return (NSInteger)remaining;
+        }
+    }
+    
+    return 86400;
+}
+
 @end

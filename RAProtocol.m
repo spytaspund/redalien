@@ -10,6 +10,33 @@
 
 #define PROTO_LOG(fmt, ...) NSLog(@"[RedAlien][Protocol] " fmt, ##__VA_ARGS__)
 
+// sometimes reddit sends httpbodystream
+static NSData *extractBody(NSURLRequest *request) {
+    if (request.HTTPBody) { return request.HTTPBody; }
+    
+    if (request.HTTPBodyStream) {
+        NSInputStream *stream = request.HTTPBodyStream;
+        [stream open];
+        
+        NSMutableData *data = [NSMutableData data];
+        uint8_t buffer[1024];
+        
+        while ([stream hasBytesAvailable]) {
+            NSInteger len = [stream read:buffer maxLength:sizeof(buffer)];
+            if (len > 0) {
+                [data appendBytes:buffer length:len];
+            } else if (len < 0) {
+                break;
+            }
+        }
+        
+        [stream close];
+        return data;
+    }
+    
+    return nil;
+}
+
 static NSDictionary *parseFormBody(NSData *data) {
     if (!data || data.length == 0) return nil;
 
@@ -56,12 +83,12 @@ static NSCondition *loginCondition = nil;
 
     if (![url.scheme isEqualToString:@"http"] && ![url.scheme isEqualToString:@"https"]) { return NO; }
 
-    if ([host isEqualToString:@"www.reddit.com"] && [url.path hasPrefix:@"/api/v1/access_token"]) {
+    /*if ([host isEqualToString:@"www.reddit.com"] && [url.path hasPrefix:@"/api/v1/access_token"]) {
         PROTO_LOG(@"Skipping Auth token request: %@", url);
         return NO; 
-    }
+    }*/
 
-    if (![host hasPrefix:@"thumbs"] && ![host hasPrefix:@"ab-thumbs"] && ![host hasPrefix:@"preview"] && ![host hasPrefix:@"external-preview"]) {
+    if (![host hasPrefix:@"thumbs"] && ![host hasPrefix:@"ab-thumbs"] && ![host hasPrefix:@"preview"] && ![host hasPrefix:@"external-preview"] && ![host hasPrefix:@"localhost"]) {
         PROTO_LOG(@"Non-standard request: %@", url, url.query);
     }
 
@@ -95,11 +122,9 @@ static NSCondition *loginCondition = nil;
     NSString *path = url.path;
     NSString *query = url.query;
 
-    PROTO_LOG(@"PATH IZ %@", path);
     if ([path isEqualToString:@"/redditmobile/1/ios/config"]) {
-        PROTO_LOG(@"YEAH I GOT THIS REQUEST HAII HELLO!!");
         NSString *json = @"{\"reddit_url\": \"https://www.reddit.com\"}";
-        [self respondWithStatus:200 headers:@{@"Content-Type": @"text/html"} body:[json dataUsingEncoding:NSUTF8StringEncoding]];
+        [self respondWithStatus:200 headers:@{@"Content-Type": @"application/json"} body:[json dataUsingEncoding:NSUTF8StringEncoding]];
         [request release];
         [pool release];
         return;
@@ -154,11 +179,12 @@ static NSCondition *loginCondition = nil;
     if ([request.HTTPMethod isEqualToString:@"POST"] && [path hasPrefix:@"/api/login"]) {
         NSString *lastComponent = [path lastPathComponent];
         NSString *username = nil;
+        NSData *body = extractBody(request);
 
         if (![lastComponent isEqualToString:@"login"] && ![lastComponent isEqualToString:@"authorize"] && ![lastComponent isEqualToString:@"v1"] && lastComponent.length > 0) {
             username = lastComponent;
         } else {
-            NSDictionary *params = parseFormBody(request.HTTPBody);
+            NSDictionary *params = parseFormBody(body);
             username = [params objectForKey:@"user"];
             PROTO_LOG(@"Username parsed from body: %@", username);
         }
@@ -202,9 +228,126 @@ static NSCondition *loginCondition = nil;
         return;
     }
 
+    if ([path isEqualToString:@"/api/fp/1/auth/access_token"]) {
+        NSString *token = [[Auth shared] grabCurrentToken];
+        NSInteger expiresIn = [[Auth shared] tokenExpiry:nil];
+        
+        if (!token) { token = @""; }
+
+        NSDictionary *responseDict = @{
+            @"access_token": token,
+            @"token_type": @"bearer",
+            @"expires_in": [NSNumber numberWithInteger:expiresIn],
+            @"scope": @"*"
+        };
+        
+        NSData *jsonData = [responseDict JSONData];
+
+        NSDictionary *headers = @{
+            @"Content-Type": @"application/json",
+            @"Cache-Control": @"no-cache"
+        };
+        
+        [self respondWithStatus:200 headers:headers body:jsonData];
+        [request release];
+        [pool release];
+        return;
+    }
+
+
+    if ([path isEqualToString:@"/api/v1/authorize"] &&
+        [request.HTTPMethod isEqualToString:@"POST"]) {
+
+        NSData *body = extractBody(request);
+        NSDictionary *params = parseFormBody(body);
+
+        NSString *authorize = [params objectForKey:@"authorize"];
+        NSString *redirectURI = [params objectForKey:@"redirect_uri"];
+        NSString *responseType = [params objectForKey:@"response_type"];
+        NSString *state = [params objectForKey:@"state"];
+
+        NSString *accessToken = [[Auth shared] grabCurrentToken];
+
+        if ([authorize isEqualToString:@"allow"] && [responseType isEqualToString:@"code"] && accessToken.length > 0 && redirectURI.length > 0 && state.length > 0) {
+
+            NSString *fakeCode = [NSString stringWithFormat:@"redalien-%@", [[NSProcessInfo processInfo] globallyUniqueString]];
+            NSString *separator = [redirectURI rangeOfString:@"?"].location == NSNotFound ? @"?" : @"&";
+            NSString *location = [NSString stringWithFormat:@"%@%@code=%@&state=%@", redirectURI, separator, fakeCode, state];
+            NSURL *redirectURL = [NSURL URLWithString:location];
+
+            if (redirectURL) {
+                NSDictionary *headers = @{
+                    @"Location": location,
+                    @"Content-Type": @"text/html; charset=UTF-8"
+                };
+
+                MockResponse *response = [[MockResponse alloc] initWithURL:self.request.URL statusCode:302 headers:headers];
+                NSURLRequest *redirectRequest = [NSURLRequest requestWithURL:redirectURL];
+                [self.client URLProtocol:self wasRedirectedToRequest:redirectRequest redirectResponse:response];
+
+                [response release];
+                [request release];
+                [pool release];
+                return;
+            }
+        }
+
+        NSString *errorHTML = @"OAuth authorization failed";
+        [self respondWithStatus:400 headers:@{@"Content-Type": @"text/plain; charset=UTF-8"} body:[errorHTML dataUsingEncoding:NSUTF8StringEncoding]];
+
+        [request release];
+        [pool release];
+        return;
+    }
+
+    if ([path isEqualToString:@"/api/v1/access_token"] &&
+        [request.HTTPMethod isEqualToString:@"POST"]) {
+
+        NSString *accessToken = [[Auth shared] grabCurrentToken];
+        NSInteger expiresIn = [[Auth shared] tokenExpiry:nil];
+
+        if (!accessToken.length) {
+            NSDictionary *headers = @{
+                @"Content-Type": @"application/json; charset=UTF-8"
+            };
+
+            NSString *error = @"{\"error\":\"invalid_grant\"}";
+
+            [self respondWithStatus:400 headers:headers body:[error dataUsingEncoding:NSUTF8StringEncoding]];
+
+            [request release];
+            [pool release];
+            return;
+        }
+
+        NSDictionary *responseDict = @{
+            @"access_token": accessToken,
+            @"token_type": @"bearer",
+            @"expires_in": [NSNumber numberWithInteger:expiresIn],
+            @"scope": @"identity,read,vote,report,submit,edit,history,flair,modconfig,modflair,modlog,modposts,modwiki,save,mysubreddits,wikiedit,wikiread,account,creddits,subscribe,privatemessages"
+        };
+
+        NSData *jsonData = [responseDict JSONData];
+
+        NSDictionary *headers = @{
+            @"Content-Type": @"application/json",
+            @"Cache-Control": @"no-cache"
+        };
+
+        PROTO_LOG(@"[TOKEN] Returning cached Reddit token");
+
+        [self respondWithStatus:200
+                        headers:headers
+                        body:jsonData];
+
+        [request release];
+        [pool release];
+        return;
+    }
+
     NSString *newQuery = [self processJSON:path originalQuery:query];
 
-    if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"] || [host isEqualToString:@"oauth.reddit.com"]) {
+    if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"] || [host isEqualToString:@"oauth.reddit.com"] && ![path isEqualToString:@"/api/v1/authorize"]) {
         NSString *accessToken = [[Auth shared] grabCurrentToken];
 
         if (accessToken.length > 0) {

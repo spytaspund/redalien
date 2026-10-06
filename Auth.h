@@ -10,6 +10,8 @@
 - (NSString *)grabRedditToken;
 - (NSString *)grabCurrentToken;
 
+- (NSInteger)tokenExpiry:(NSString *)username;
+
 - (void)setAuthCode:(NSString *)code forUser:(NSString *)username;
 - (NSString *)currentUser;
 - (void)setUser:(NSString *)username;

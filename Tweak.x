@@ -23,9 +23,17 @@
 
 %ctor {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+    NSString *processName = [[NSProcessInfo processInfo] processName];
+
     [NSURLProtocol registerClass:[RAProtocol class]];
     [Auth shared];
-    [HTTPServer startOnPort:8080];
-    NSLog(@"[RedAlien] ============ RedAlien landed! ============");
+
+    if ([processName isEqualToString:@"com.apple.WebKit.Networking"]) {
+        NSLog(@"[RedAlien] ============ WebKit conquered! ============"); // don't start the http server
+    } else {
+        [HTTPServer startOnPort:8080];
+        NSLog(@"[RedAlien] ============ RedAlien landed! ============");
+    }
+
     [pool drain];
 }

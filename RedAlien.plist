@@ -11,6 +11,7 @@
             <string>com.reddit.alienblue</string>
             <string>com.reddit.alienbluehd</string>
             <string>com.reddit.Reddit</string>
+            <string>com.apple.WebKit.Networking</string>
         </array>
     </dict>
 </dict>
