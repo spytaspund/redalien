@@ -76,6 +76,7 @@ static NSCondition *loginCondition = nil;
 }
 
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    PROTO_LOG(@"[RedAlien][Protocol] canInit: %@", request.URL.absoluteString);
     if ([NSURLProtocol propertyForKey:@"4thKindContact" inRequest:request]) { return NO; }
 
     NSURL *url = [NSURL URLWithString:removeAmp([request.URL absoluteString])];
