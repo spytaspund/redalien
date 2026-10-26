@@ -12,6 +12,9 @@
             <string>com.reddit.alienbluehd</string>
             <string>com.reddit.Reddit</string>
             <string>com.nlanasa.wormhole</string>
+            <string>reddit.pics.pro</string>
+            <string>com.chishingfung.redditphotoclock</string>
+            <string>com.simplicitysoftware.KarmaHD</string>
             <string>com.apple.WebKit.Networking</string>
         </array>
     </dict>

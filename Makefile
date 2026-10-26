@@ -4,8 +4,8 @@ ARCHS = armv6 armv7
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = RedAlien
-RedAlien_FILES = Tweak.x Auth.m RAProtocol.m Video.m SubIcon.m Gallery.m HTTPServer.m LoginVC.m JSONKit.m MockResponse.m
-RedAlien_FRAMEWORKS = UIKit
+RedAlien_FILES = Tweak.x Auth.m RAProtocol.m Video.m SubIcon.m Gallery.m HTTPServer.m LoginVC.m JSONKit.m MockResponse.m FFmpeg.m VideoPlayer.m
+RedAlien_FRAMEWORKS = UIKit MediaPlayer
 
 RedAlien_CFLAGS = -std=gnu99 -D_DARWIN_C_SOURCE -D_GNU_SOURCE \
                   -Wno-ignored-attributes -w \

@@ -83,6 +83,7 @@ static NSCondition *loginCondition = nil;
     NSString *host = [url.host lowercaseString];
 
     if (![url.scheme isEqualToString:@"http"] && ![url.scheme isEqualToString:@"https"]) { return NO; }
+    if ([url.path hasSuffix:@".m3u8"]) { return NO; }
 
     /*if ([host isEqualToString:@"www.reddit.com"] && [url.path hasPrefix:@"/api/v1/access_token"]) {
         PROTO_LOG(@"Skipping Auth token request: %@", url);
@@ -106,6 +107,7 @@ static NSCondition *loginCondition = nil;
 }
 
 - (void)startLoading {
+    PROTO_LOG(@"START LOADING: %@", self.request.URL.absoluteString);
     [self performSelectorInBackground:@selector(patchRequest:) withObject:self.request];
 }
 
@@ -138,11 +140,34 @@ static NSCondition *loginCondition = nil;
 
     if ([host isEqualToString:@"v.redd.it"]) {
         if (![path hasSuffix:@"/favicon.ico"] && ![path hasSuffix:@"/favicon.png"] && ![path hasSuffix:@".mp4"]) {
-            NSData *vidData = [processVidRequest(path) dataUsingEncoding:NSUTF8StringEncoding];
-            [self respondWithStatus:200 headers:@{@"Content-Type": @"text/html"} body:vidData];
-            [request release];
-            [pool release];
-            return;
+            NSString *videoID = [path stringByTrimmingCharactersInSet: [NSCharacterSet characterSetWithCharactersInString:@"/"]];
+            NSString *cleanPath = [[path componentsSeparatedByString:@"?"] objectAtIndex:0];
+            if ([cleanPath hasSuffix:@"/status.js"]) {
+                NSArray *parts = [videoID componentsSeparatedByString:@"/"];
+                if ([parts count] != 2) {
+                    [self respondWithStatus:404 headers:@{} body:[NSData data]];
+                    [request release];
+                    [pool release];
+                    return;
+                }
+
+                videoID = [parts objectAtIndex:0];
+                NSString *status = statusByID(videoID);
+                NSData *statusData = status ? [status dataUsingEncoding:NSUTF8StringEncoding] : [NSData data];
+
+                [self respondWithStatus:(status ? 200 : 404) headers:@{@"Content-Type": @"application/javascript", @"Cache-Control": @"no-store"} body:statusData];
+                [request release];
+                [pool release];
+                return;
+            } else {
+                NSString *html = videoResponse(videoID);
+                NSData *vidData = [html dataUsingEncoding:NSUTF8StringEncoding];
+
+                [self respondWithStatus:200 headers:@{@"Content-Type": @"text/html"} body:vidData];
+                [request release];
+                [pool release];
+                return;
+            }
         }
     }
 

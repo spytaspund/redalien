@@ -3,14 +3,9 @@
 static NSString * const prefsID = @"dev.spytaspund.redalien";
 
 static NSString * const userAgent = @"Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0";
-static NSString * const ffFlags = 
-    @"-y "
-    @"-c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p "
-    @"-preset ultrafast -crf 26 -r 30 "
-    @"-c:a aac -ac 2 -ar 44100 -b:a 128k "
-    @"-hls_time 4 -hls_list_size 0 -hls_segment_filename \"segment_%03d.ts\"";
 
 static NSString * const tempDir = @"/var/tmp/redalien";
+static NSString * const appSupportDir = @"/Library/Application Support/RedAlien";
 
 // i <3 github dorks
 static NSString * const rClientID64 = @"b2hYcG9xclpZdWIxa2c=";
@@ -129,5 +124,35 @@ static inline void saveToPrefs(id value, NSString *key) {
     CFPreferencesAppSynchronize((CFStringRef)prefsID);
 }
 
-#define videoQualities [NSArray arrayWithObjects: @"CMAF_1080.mp4", @"CMAF_720.mp4", @"CMAF_480.mp4", @"CMAF_360.mp4", @"CMAF_270.mp4", @"CMAF_220.mp4", nil]
-#define audioQualities [NSArray arrayWithObjects: @"CMAF_AUDIO_128.mp4", @"CMAF_AUDIO_64.mp4", nil]
+static void removeIfExists(NSString *path) {
+    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+    }
+}
+
+static BOOL isPad() {
+    CGRect bounds = [[UIScreen mainScreen] bounds];
+    CGFloat width = MAX(bounds.size.width, bounds.size.height);
+    return width >= 700.0;
+}
+
+static BOOL isRetina() {
+    UIScreen *screen = [UIScreen mainScreen];
+    SEL scaleSelector = @selector(scale);
+    if ([screen respondsToSelector:scaleSelector]) {
+        CGFloat scale = [screen scale];
+        if (scale >= 1.5) return YES;
+    }
+    return NO;
+}
+
+static NSString *jsonEscapedString(NSString *input) {
+    if (!input) return @"";
+    NSMutableString *escaped = [[input mutableCopy] autorelease];
+    [escaped replaceOccurrencesOfString:@"\\" withString:@"\\\\" options:0 range:NSMakeRange(0, [escaped length])];
+    [escaped replaceOccurrencesOfString:@"\"" withString:@"\\\"" options:0 range:NSMakeRange(0, [escaped length])];
+    [escaped replaceOccurrencesOfString:@"\r" withString:@"\\r" options:0 range:NSMakeRange(0, [escaped length])];
+    [escaped replaceOccurrencesOfString:@"\n" withString:@"\\n" options:0 range:NSMakeRange(0, [escaped length])];
+    [escaped replaceOccurrencesOfString:@"\t" withString:@"\\t" options:0 range:NSMakeRange(0, [escaped length])];
+    return escaped;
+}

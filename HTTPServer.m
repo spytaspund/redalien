@@ -1,9 +1,15 @@
-#import "HTTPServer.h"
-#import "Auth.h"
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <unistd.h>
 #import <pthread.h>
+#import <fcntl.h>
+#import <errno.h>
+#import <sys/types.h>
+#include "HTTPServer.h"
+#include "Auth.h"
+#include "VideoPlayer.h"
+#include "Video.h"
+#include "Misc.h"
 
 #define HTTP_LOG(fmt, ...) NSLog(@"[RedAlien][HTTPServer] " fmt, ##__VA_ARGS__)
 
@@ -90,12 +96,23 @@ static void *handleClient(void *arg) {
         if ([parts count] >= 2) {
             NSString *route = [parts objectAtIndex:0];
             NSString *path = [parts objectAtIndex:1];
+            NSString *cleanPath = path;
+            NSRange queryRange = [cleanPath rangeOfString:@"?"];
+            if (queryRange.location != NSNotFound) {
+                cleanPath = [cleanPath substringToIndex:queryRange.location];
+            }
+            NSString *urlTempDir = tempDir;
+            if ([urlTempDir hasPrefix:@"/private/"]) {
+                urlTempDir = [urlTempDir substringFromIndex:8];
+            }
+
+            NSString *openPrefix = [urlTempDir stringByAppendingString:@"/"];
+
             HTTP_LOG(@"%@ %@", route, path);
 
             if ([path hasPrefix:@"/auth"]) {
                 NSString *filePath = @"/Library/Application Support/RedAlien/auth.html";
                 NSData *htmlData = [NSData dataWithContentsOfFile:filePath];
-
                 if (htmlData) { sendResponse(sock, 200, @"text/html; charset=utf-8", htmlData); }
                 else { sendResponse(sock, 500, @"text/plain", [@"auth.html not found in /Library/Application Support/RedAlien/" dataUsingEncoding:NSUTF8StringEncoding]); }
             } else if ([path hasPrefix:@"/submit?url="]) {
@@ -116,8 +133,30 @@ static void *handleClient(void *arg) {
                     if (htmlData) {  sendResponse(sock, 200, @"text/html; charset=utf-8", htmlData); }
                     else { sendResponse(sock, 200, @"text/html; charset=utf-8", [@"<h2>Success!</h2>" dataUsingEncoding:NSUTF8StringEncoding]); }
                 } else { sendResponse(sock, 400, @"text/plain", [@"Invalid URL pasted" dataUsingEncoding:NSUTF8StringEncoding]); }
+            } else if ([cleanPath hasPrefix:openPrefix] && [cleanPath hasSuffix:@"/open"]) {
+                NSString *relative = [cleanPath substringFromIndex:[openPrefix length]];
+                NSArray *components = [relative componentsSeparatedByString:@"/"];
+
+                if ([components count] == 2 &&
+                    [[components objectAtIndex:1] isEqualToString:@"open"]) {
+                    NSString *videoID = [components objectAtIndex:0];
+                    NSCharacterSet *invalidChars = [[NSCharacterSet characterSetWithCharactersInString: @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"] invertedSet];
+                    if ([videoID length] > 0 && [videoID rangeOfCharacterFromSet:invalidChars].location == NSNotFound) {
+                        NSString *dir = videoDir(videoID);
+                        NSString *videoPath = [dir stringByAppendingPathComponent:@"video.mp4"];
+
+                        BOOL isDirectory = NO;
+                        if ([[NSFileManager defaultManager] fileExistsAtPath:videoPath isDirectory:&isDirectory] && !isDirectory) {
+                            [RAVideoPlayer playFile:videoPath];
+                        }
+                    }
+                }
+                sendResponse(sock, 200, @"text/plain", [NSData data]);
             } else if ([path hasPrefix:@"/var/"] || [path hasPrefix:@"/private/"]) {
-                NSString *filePath = [path stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+                NSString *filePath = [cleanPath stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+                if ([filePath hasPrefix:@"/var/"] && ![[NSFileManager defaultManager] fileExistsAtPath:filePath] && [[NSFileManager defaultManager] fileExistsAtPath:[@"/private" stringByAppendingString:filePath]]) {
+                    filePath = [@"/private" stringByAppendingString:filePath];
+                }
                 
                 while ([filePath hasPrefix:@"//"]) { filePath = [filePath substringFromIndex:1]; }
                 
@@ -159,31 +198,32 @@ static void *handleClient(void *arg) {
                     if (end >= fileSize) end = fileSize - 1;
                     long long contentLength = (end - start) + 1;
                     
-                    FILE *f = fopen([filePath UTF8String], "rb");
-                    if (f) {
+                    int fd = open([filePath fileSystemRepresentation], O_RDONLY);
+                    if (fd >= 0) {
                         if (isRangeRequest) {
                             sendHeaders(sock, 206, @"Partial Content", mime, contentLength, start, end, fileSize);
-                            fseeko(f, start, SEEK_SET);
-                        } else {
-                            sendHeaders(sock, 200, @"OK", mime, fileSize, 0, 0, 0);
-                        }
-                        
+                            lseek(fd, (off_t)start, SEEK_SET);
+                        } else { sendHeaders(sock, 200, @"OK", mime, fileSize, 0, 0, 0); }
+
                         char fileBuf[65536];
                         long long bytesLeft = contentLength;
                         while (bytesLeft > 0) {
-                            size_t toRead = (bytesLeft < sizeof(fileBuf)) ? (size_t)bytesLeft : sizeof(fileBuf);
-                            size_t readBytes = fread(fileBuf, 1, toRead, f);
-                            if (readBytes <= 0) break;
-                            
-                            ssize_t written = write(sock, fileBuf, readBytes);
-                            if (written <= 0) break;
+                            size_t toRead = bytesLeft < sizeof(fileBuf) ? (size_t)bytesLeft : sizeof(fileBuf);
+                            ssize_t n = read(fd, fileBuf, toRead);
+                            if (n <= 0) break;
 
-                            bytesLeft -= written;
-                            if (written < readBytes) {
-                                fseeko(f, written - readBytes, SEEK_CUR);
+                            ssize_t offset = 0;
+                            while (offset < n) {
+                                ssize_t written = write(sock, fileBuf + offset, n - offset);
+                                if (written < 0 && errno == EINTR) continue;
+                                if (written <= 0) break;
+                                offset += written;
                             }
+
+                            if (offset < n) break;
+                            bytesLeft -= n;
                         }
-                        fclose(f);
+                        close(fd);
                     } else {
                         sendResponse(sock, 403, @"text/plain", [@"Forbidden" dataUsingEncoding:NSUTF8StringEncoding]);
                     }

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        * {
+            -webkit-box-sizing: border-box;
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #111;
+            color: #ccc;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            position: fixed;
+            top: 0;
+            left: 0;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-box-pack: center;
+            -webkit-box-align: center;
+        }
+
+        .container {
+            width: 80%;
+            max-width: 280px;
+            text-align: center;
+        }
+
+        .button {
+            display: block;
+            width: 100%;
+            padding: 13px 10px;
+            border: 1px solid #b83200;
+            -webkit-border-radius: 7px;
+            background-color: #ff4500;
+            background-image: -webkit-gradient(
+                linear, left top, left bottom,
+                color-stop(0%, #ff8a55),
+                color-stop(45%, #ff5718),
+                color-stop(50%, #f04400),
+                color-stop(100%, #c93400)
+            );
+            -webkit-box-shadow:
+                0 1px 0 rgba(255,255,255,.12),
+                inset 0 1px 0 rgba(255,255,255,.3);
+            color: #fff;
+            font-size: 15px;
+            font-weight: bold;
+            text-align: center;
+            text-decoration: none;
+            text-shadow: 0 -1px 0 rgba(0,0,0,.4);
+        }
+
+        .button:active {
+            background-image: -webkit-gradient(
+                linear, left top, left bottom,
+                color-stop(0%, #d93b00),
+                color-stop(100%, #a92d00)
+            );
+        }
+
+        .open-frame {
+            display: none;
+            width: 0;
+            height: 0;
+            border: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <a class="button"
+           href="http://127.0.0.1:{{HTTP_PORT}}/var/tmp/redalien/{{VIDEO_ID}}/open"
+           target="openFrame">
+            Open QuickTime Player
+        </a>
+    </div>
+    <iframe class="open-frame" name="openFrame"></iframe>
+</body>
+</html>
