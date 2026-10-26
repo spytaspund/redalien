@@ -5,6 +5,7 @@ Recommends: com.skyglow.tlsfix
 Version: 0.0.4
 Architecture: iphoneos-arm
 Description: Various fixes for AlienBlue and other Reddit clients.
+Depiction: https://spytaspund.github.io/cydia-repo/depictions/?p=dev.spytaspund.redalien
 Maintainer: spytaspund
 Author: spytaspund
 Section: Tweaks
