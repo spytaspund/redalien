@@ -202,7 +202,7 @@ static NSCondition *loginCondition = nil;
         return;
     }
 
-    if ([request.HTTPMethod isEqualToString:@"POST"] && [path hasPrefix:@"/api/login"]) {
+    if ([request.HTTPMethod isEqualToString:@"POST"] && ([path hasPrefix:@"/api/login"] || [path hasPrefix:@"/api/v1/login"])) {
         NSString *lastComponent = [path lastPathComponent];
         NSString *username = nil;
         NSData *body = extractBody(request);
@@ -354,17 +354,13 @@ static NSCondition *loginCondition = nil;
         };
 
         NSData *jsonData = [responseDict JSONData];
-
         NSDictionary *headers = @{
             @"Content-Type": @"application/json",
             @"Cache-Control": @"no-cache"
         };
 
         PROTO_LOG(@"[TOKEN] Returning cached Reddit token");
-
-        [self respondWithStatus:200
-                        headers:headers
-                        body:jsonData];
+        [self respondWithStatus:200 headers:headers body:jsonData];
 
         [request release];
         [pool release];
@@ -373,13 +369,15 @@ static NSCondition *loginCondition = nil;
 
     NSString *newQuery = [self processJSON:path originalQuery:query];
 
-    if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"] || [host isEqualToString:@"oauth.reddit.com"] && ![path isEqualToString:@"/api/v1/authorize"]) {
+    if ([host isEqualToString:@"www.reddit.com"] || [host isEqualToString:@"ssl.reddit.com"] || [host isEqualToString:@"reddit.com"] || [host isEqualToString:@"oauth.reddit.com"] || [host isEqualToString:@"gateway.reddit.com"] && ![path isEqualToString:@"/api/v1/authorize"]) {
         NSString *accessToken = [[Auth shared] grabCurrentToken];
-
         if (accessToken.length > 0) {
-            NSString *newURLString = [NSString stringWithFormat:@"https://oauth.reddit.com%@%@", path, newQuery.length > 0 ? [NSString stringWithFormat:@"?%@", newQuery] : @""];
+            NSString *jsonPath = path;
+            if ([path hasPrefix:@"/redditmobile/1/mainfeed"]) { jsonPath = @"/.json"; }
+
+            NSString *newURLString = [NSString stringWithFormat:@"https://oauth.reddit.com%@%@", jsonPath, newQuery.length > 0 ? [NSString stringWithFormat:@"?%@", newQuery] : @""];
             NSURL *newURL = [NSURL URLWithString:newURLString];
-            
+
             if (newURL) {
                 [request setURL:newURL];
                 [request setValue:@"oauth.reddit.com" forHTTPHeaderField:@"Host"];
